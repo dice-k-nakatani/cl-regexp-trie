@@ -90,7 +90,7 @@
                          (format nil "~a" (car alt))
                          (with-output-to-string (stream)
                            (princ "(?:" stream)
-                           ;;(format stream "~{~a~^|~}" (nreverse (cons nil alt)))
+                           ;;(format stream "~{~a~^|~}" (nreverse alt))
                            (iterate (((curr next) (chunk 2 1 (scan (nreverse (cons nil alt))))))
                              (if next
                                  (progn

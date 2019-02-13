@@ -5,7 +5,7 @@
 (defsystem "cl-regexp-trie"
   :version "0.1.0"
   :author "dice-k-nakatani"
-  :license "mit"
+  :license "MIT"
   :depends-on (:series
                :cl-ppcre
                :cl-ppcre-unicode

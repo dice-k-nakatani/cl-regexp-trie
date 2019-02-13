@@ -4,8 +4,8 @@
 
 (defsystem "cl-regexp-trie-test"
   :defsystem-depends-on ("prove-asdf")
-  :author ""
-  :license ""
+  :author "dice-k-nakatani"
+  :license "MIT"
   :depends-on ("cl-regexp-trie"
                "prove"
                "trivia"

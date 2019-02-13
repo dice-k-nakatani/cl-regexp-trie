@@ -32,20 +32,25 @@ exec ros -Q dynamic-space-size=5000 control-stack-size=1000 -- $0 "$@"
          (dict-path (make-pathname :defaults *load-pathname* :name "hatena-keyword-list" :type "csv"))
          (rt (make-regexp-trie))
          (debug-length 0)
-         (dict-list (sort (collect (choose
-                                    (map-fn
-                                     t
-                                     (lambda (line)
-                                       (match (ppcre:split #.(ppcre:create-scanner "\\t") line)
-                                         ((list yomi word)
-                                          (when (and word (< 0 (length word)))
-                                            word))))
-                                     (scan-file dict-path #'read-line))))
-                          (lambda (a b) (< (length a) (length b))))))
+         (dict-list ;;(sort
+           (collect (choose
+                     (subseries
+                      (map-fn
+                       t
+                       (lambda (line)
+                         (match (ppcre:split #.(ppcre:create-scanner "\\t") line)
+                           ((list yomi word)
+                            (when (and word (< 0 (length word)))
+                              word))))
+                       (scan-file dict-path #'read-line))
+                      0 10000)
+                     ))
+           ;;(lambda (a b) (< (length a) (length b))))
+           ))
 
     (format t "---- adding keyword from dict to regexp-trie~%")
     (iterate ((word (scan dict-list)))
-      (regexp-trie-add rt word)
+        (regexp-trie-add rt word)
       (incf debug-length)
       )
     (format t "---- dict size: ~a~%" debug-length)
@@ -60,7 +65,7 @@ exec ros -Q dynamic-space-size=5000 control-stack-size=1000 -- $0 "$@"
       (setf scanner-alt-raw
             (with-output-to-string (*standard-output*)
               (iterate (((curr next) (chunk 2 1 (catenate (scan dict-list) (scan (list nil))))))
-                (princ (cl-regexp-trie::quote-meta-chars curr)) ;; japanese only
+                  (princ (cl-regexp-trie::quote-meta-chars curr)) ;; japanese only
                 (when next (princ "|"))
                 )))
       (setf scanner-alt (ppcre:create-scanner scanner-alt-raw))
@@ -68,13 +73,13 @@ exec ros -Q dynamic-space-size=5000 control-stack-size=1000 -- $0 "$@"
       (format t "---- replacing with scanner-trie~%")
       (time
        (iterate ((i (scan-range :length 10)))
-         (ppcre:regex-replace-all scanner-trie data "*")))
+           (ppcre:regex-replace-all scanner-trie data "*")))
 
 
       (format t "---- replacing with scanner-alt~%")
       (time
        (iterate ((i (scan-range :length 10)))
-         (ppcre:regex-replace-all scanner-alt data "*")))
+           (ppcre:regex-replace-all scanner-alt data "*")))
       ))
   )
 
