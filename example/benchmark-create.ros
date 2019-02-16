@@ -1,0 +1,90 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q dynamic-space-size=5000 control-stack-size=1000 -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  ;;#+quicklisp(ql:quickload '() :silent t)
+  )
+
+;; ref: https://github.com/gfx/ruby-regexp_trie
+
+(ql:quickload :cl-regexp-trie)
+(ql:quickload :series)
+(ql:quickload :trivia)
+(ql:quickload :cl-ppcre)
+(ql:quickload :cl-ppcre-unicode)
+
+(defpackage :ros.script.bench.3758932891
+  (:use
+   :cl
+   :cl-regexp-trie
+   :series
+   :trivia
+   ))
+(in-package :ros.script.bench.3758932891)
+
+(defun main (&rest argv)
+  (declare (ignorable argv))
+  (let* (;;(data-path (make-pathname :defaults *load-pathname* :name "sample-text" :type "txt"))
+         ;;(data (uiop:read-file-string data-path))
+         (dict-path (make-pathname :defaults *load-pathname* :name "hatena-keyword-list" :type "csv"))
+         rt;; (make-regexp-trie))
+         (dict-list ;;(sort
+           (collect (choose
+                     (subseries
+                      (map-fn
+                       t
+                       (lambda (line)
+                         (match (ppcre:split #.(ppcre:create-scanner "\\t") line)
+                           ((list _ word)
+                            (when (and word (< 0 (length word)))
+                              word))))
+                       (scan-file dict-path #'read-line))
+                      0 20000)
+                     ))
+           ;;(lambda (a b) (< (length a) (length b))))
+           ))
+
+    (setq rt (make-regexp-trie))
+    (time
+     (dotimes (i 80)
+       (setq rt (make-regexp-trie))
+       (iterate ((word (scan dict-list)))
+         (regexp-trie-add rt word))
+       ))
+    (time
+     (dotimes (i 80)
+       (regexp-trie-string rt)
+       ))
+  ))
+
+#|
+---- replacing with scanner-trie
+Evaluation took:
+  0.436 seconds of real time
+  0.435712 seconds of total run time (0.435131 user, 0.000581 system)
+  100.00% CPU
+  1,265,695,773 processor cycles
+  842,176 bytes consed
+
+---- replacing with scanner-alt
+Evaluation took:
+  149.072 seconds of real time
+  148.687371 seconds of total run time (148.461421 user, 0.225950 system)
+  99.74% CPU
+  432,905,469,737 processor cycles
+  898,272 bytes consed
+
+$ system_profiler SPHardwareDataType
+      Model Name: MacBook Pro
+      Model Identifier: MacBookPro13,3
+      Processor Name: Intel Core i7
+      Processor Speed: 2.9 GHz
+      Number of Processors: 1
+      Total Number of Cores: 4
+      L2 Cache (per Core): 256 KB
+      L3 Cache: 8 MB
+      Memory: 16 GB
+|#

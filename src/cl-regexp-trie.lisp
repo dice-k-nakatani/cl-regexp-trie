@@ -25,31 +25,70 @@
 (let* ((ppcre::*use-bmh-matchers* nil)
        (non-word-char-scanner (ppcre:create-scanner "[^a-zA-Z_0-9\\p{Hiragana}\\p{Katakana}\\p{Han}]")))
   (defun quote-meta-chars (string &key (start 0) (end (length string)))
+    (declare #.*standard-optimize-settings*)
     (ppcre:regex-replace-all non-word-char-scanner string "\\\\\\&"
                              :start start :end end)))
 
+(defvar *non-word-char-scanner* (ppcre:create-scanner "[^a-zA-Z_0-9\\p{Hiragana}\\p{Katakana}\\p{Han}]"))
+(defmacro need-quote-meta-char-p (string)
+  `(ppcre:scan *non-word-char-scanner* ,string))
+
 ;; ------------------------------
 
-(defun make-node () (list nil))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (remove :regexp-trie-plist *features*)
+  )
 
-(defmacro node-val (node key)
-  `(getf (car ,node) ,key))
+#+regexp-trie-plist
+(progn
+  #|
+`plist` surprised me. like:
+(defvar a)
+(defvar b)
+(setq a '(:a 1 :b 2))
+(setq b a)
+(assert (eq a b))
 
-(defmacro node-set (node key val)
-  `(setf (getf (car ,node) ,key) ,val))
+(setf (getf a :b) 20)
+(assert (eq a b))
 
-(defun node-p (node)
-  (and (listp node)
-       (listp (car node))))
+(setf (getf a :c) 30)
+(assert (not (eq a b))) ;; ??
 
-(defmacro scan-node (node)
-  `(scan-plist (car ,node)))
+I can not use plist as hash-table.
+I must wrap it with cons or somrthing.
+  |#
+
+  (defmacro make-node () `(list nil))
+  (defmacro node-val (node key)
+    `(getf (car ,node) ,key))
+  (defmacro node-set (node key val)
+    `(setf (getf (car ,node) ,key) ,val))
+  (defmacro node-p (node)
+    `(and (listp ,node)
+          (listp (car ,node))))
+  (defmacro scan-node (node)
+    `(scan-plist (car ,node)))
+  )
+#-regexp-trie-plist
+(progn
+  (defmacro make-node ()
+    `(make-hash-table :test 'eq))
+  (defmacro node-val (node key)
+    `(gethash ,key ,node))
+  (defmacro node-set (node key val)
+    `(setf (gethash ,key ,node) ,val))
+  (defmacro node-p (node)
+    `(hash-table-p ,node))
+  (defmacro scan-node (node)
+    `(scan-hash ,node))
+  )
+
 
 ;; ------------------------------
 (defun make-regexp-trie () (make-node))
 
 (defun regexp-trie-add (obj string)
-  (declare #.*standard-optimize-settings*)
   (let ((term-obj (collect-fn
                    t
                    (lambda () obj)
@@ -64,9 +103,7 @@
     (node-set term-obj :term t)))
 
 (defun regexp-trie-string (obj)
-  (declare #.*standard-optimize-settings*)
   (labels ((walk (xobj)
-             (declare #.*standard-optimize-settings*)
              (let (alt
                    cc
                    termp
@@ -74,15 +111,19 @@
                    result)
                (when (and (node-val xobj :term) (not (collect-nth 1 (scan-node xobj))))
                  (return-from walk))
-               ;; sort node key to stabilize the result.
-               (iterate ((char (scan (sort (collect (scan-node xobj))
-                                           (lambda (a b)
-                                             (cond
-                                               ((eq :term a) nil)
-                                               ((eq :term b) t)
-                                               (t (char<= a b))))))))
+               (iterate ((char
+                          (scan (sort (collect (scan-node xobj))
+                                      (lambda (a b)
+                                        (cond
+                                          ((eq :term a) nil)
+                                          ((eq :term b) t)
+                                          (t (char<= a b))))))
+                          ))
                  (let ((xxobj (node-val xobj char))
-                       (qchar (quote-meta-chars (format nil "~a" char))))
+                       (qchar (let ((str (princ-to-string char)))
+                                (if (need-quote-meta-char-p str)
+                                    (format nil "\\~a" char)
+                                    str))))
                    (if (node-p xxobj)
                        (let ((recurse (walk xxobj)))
                          (if recurse
@@ -90,33 +131,22 @@
                              (push qchar cc)))
                        (setf termp t)))
                  )
+
                (setq groupedp (not alt))
+
                (when cc
                  (push (if (= 1 (length cc))
                            (car cc)
-                           (with-output-to-string (*standard-output*)
-                             (princ "[")
-                             (dolist (c (nreverse cc))
-                               (princ c))
-                             (princ "]"))
-                           )
+                           (format nil "[~{~a~}]" (nreverse cc)))
                        alt))
+
+               (setq groupedp (or groupedp (< 1 (length alt))))
+
                (setq result
                      (if (= 1 (length alt))
                          (format nil "~a" (car alt))
-                         (with-output-to-string (stream)
-                           (princ "(?:" stream)
-                           ;;(format stream "~{~a~^|~}" (nreverse alt))
-                           (iterate (((curr next) (chunk 2 1 (scan (nreverse (cons nil alt))))))
-                             (if next
-                                 (progn
-                                   (princ curr stream)
-                                   (princ "|" stream))
-                                 (princ curr stream)))
-                           (princ ")" stream)
-                           )))
-               (setq groupedp (or groupedp
-                                  (< 1 (length alt))))
+                         (format nil "(?:~{~a~^|~})" (nreverse alt))))
+
                (when termp
                  (setq result (if groupedp
                                   (format nil "~a?" result)
