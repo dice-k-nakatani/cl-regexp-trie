@@ -28,7 +28,25 @@
     (ppcre:regex-replace-all non-word-char-scanner string "\\\\\\&"
                              :start start :end end)))
 
-(defun make-regexp-trie () (make-hash-table))
+;; ------------------------------
+
+(defun make-node () (list nil))
+
+(defmacro node-val (node key)
+  `(getf (car ,node) ,key))
+
+(defmacro node-set (node key val)
+  `(setf (getf (car ,node) ,key) ,val))
+
+(defun node-p (node)
+  (and (listp node)
+       (listp (car node))))
+
+(defmacro scan-node (node)
+  `(scan-plist (car ,node)))
+
+;; ------------------------------
+(defun make-regexp-trie () (make-node))
 
 (defun regexp-trie-add (obj string)
   (declare #.*standard-optimize-settings*)
@@ -37,37 +55,35 @@
                    (lambda () obj)
                    (lambda (xobj char)
                      (declare #.*standard-optimize-settings*)
-                     (let ((xxobj (gethash char xobj)))
+                     (let ((xxobj (node-val xobj char)))
                        (unless xxobj
-                         (setq xxobj (make-hash-table :size 8))
-                         (setf (gethash char xobj) xxobj))
+                         (setq xxobj (make-node))
+                         (node-set xobj char xxobj))
                        xxobj))
                    (scan 'string string))))
-    (setf (gethash :term term-obj) t)))
+    (node-set term-obj :term t)))
 
 (defun regexp-trie-string (obj)
   (declare #.*standard-optimize-settings*)
   (labels ((walk (xobj)
              (declare #.*standard-optimize-settings*)
-             (declare (type hash-table xobj))
              (let (alt
                    cc
                    termp
                    groupedp ;; already grouped. so do not need wrap with (?: )
                    result)
-               ;;(when (and (gethash :term xobj) (= 1 (collect-length (scan-hash xobj))))
-               (when (and (gethash :term xobj) (not (collect-nth 1 (scan-hash xobj))))
+               (when (and (node-val xobj :term) (not (collect-nth 1 (scan-node xobj))))
                  (return-from walk))
-               ;; sort hash key to stabilize the result.
-               (iterate ((char (scan (sort (collect (scan-hash xobj))
+               ;; sort node key to stabilize the result.
+               (iterate ((char (scan (sort (collect (scan-node xobj))
                                            (lambda (a b)
                                              (cond
                                                ((eq :term a) nil)
                                                ((eq :term b) t)
                                                (t (char<= a b))))))))
-                 (let ((xxobj (gethash char xobj))
+                 (let ((xxobj (node-val xobj char))
                        (qchar (quote-meta-chars (format nil "~a" char))))
-                   (if (hash-table-p xxobj)
+                   (if (node-p xxobj)
                        (let ((recurse (walk xxobj)))
                          (if recurse
                              (push (format nil "~a~a" qchar recurse) alt)
